@@ -1,0 +1,34 @@
+/* 1. DÉCLARATION DES POLICES (IMPORTATION LOCALE) */
+html {
+  font-size: 17px; /* Augmente la taille globale sans changer tout ton code */
+}
+/* Inter Regular (Corps de texte) */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/inter-v20-latin-regular.woff2') format('woff2');
+}
+
+/* Inter Semi-Bold (Titres, Boutons, Prix) */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../assets/fonts/inter-v20-latin-600.woff2') format('woff2');
+}
+
+/* 2. RÉGLAGES GLOBAUX DU BODY */
+body {
+  background-color: #f8f9fa; /* Un gris très léger pour faire ressortir les cartes blanches */
+  color: #1d1d1f; /* Un noir "Apple" plus doux que le noir pur */
+  font-family: 'Inter', sans-serif;
+  font-size: 1.05rem; /* Augmente légèrement la taille */
+  letter-spacing: -0.011em; /* Inter est optimisée avec un léger resserrement */
+  color: #111112; /* On fonce encore un tout petit peu pour gagner en lisibilité */
+  line-height: 1.6;
+
+  overscroll-behavior-y: contain;
+}
