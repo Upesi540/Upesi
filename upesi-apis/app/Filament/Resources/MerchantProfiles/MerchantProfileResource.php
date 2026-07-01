@@ -49,6 +49,14 @@ class MerchantProfileResource extends Resource
      * Suppression du getEloquentQuery restrictif
      * L'admin doit voir TOUS les profils.
      */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = MerchantProfile::where('status', 'pending')->count();
+        return $count > 0 ? (string) $count : null;
+        //                            👆                👆
+        //                     Si > 0 → affiche le nombre
+        //                     Si = 0 → retourne null (pas de badge)
+    }
 
     public static function form(Schema $schema): Schema
     {
@@ -86,7 +94,7 @@ class MerchantProfileResource extends Resource
                                             ->label('Propriétaire du compte')
                                             ->getOptionLabelFromRecordUsing(fn($record) => "{$record->first_name} {$record->last_name} ({$record->email})")
                                             ->searchable(['first_name', 'last_name', 'email']) // L'admin peut chercher par nom ou email
-                                            ->disabled() // On garde le disabled car on ne change pas le proprio d'un profil
+                                            // ->disabled() // On garde le disabled car on ne change pas le proprio d'un profil
                                             ->columnSpanFull()
                                             ->prefixIcon('heroicon-m-user-circle'),
 

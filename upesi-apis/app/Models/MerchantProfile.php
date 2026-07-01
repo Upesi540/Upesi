@@ -50,6 +50,25 @@ class MerchantProfile extends Model
     public const STATUS_APPROVED = 'approved';
     public const STATUS_REJECTED = 'rejected';
 
+
+    /**
+     * Boot du modèle
+     */
+    protected static function booted()
+    {
+        static::created(function ($merchantProfile) {
+            $user = $merchantProfile->user;
+            // IGNORER super_admin ET admin
+            if (
+                $user &&
+                !$user->hasRole('super_admin') &&
+                !$user->hasRole('admin') &&
+                !$user->hasRole('merchant')
+            ) {
+                $user->assignRole('merchant');
+            }
+        });
+    }
     /**
      * Lien vers l'utilisateur
      */

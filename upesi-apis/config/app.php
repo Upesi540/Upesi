@@ -16,6 +16,7 @@ return [
     'name' => env('APP_NAME', 'Laravel'),
     // Set base currency for the platform
     'base_currency' => env('BASE_CURRENCY', 'XOF'),
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:9200'),
 
     /*
     |--------------------------------------------------------------------------

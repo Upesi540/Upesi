@@ -54,7 +54,7 @@ class ServiceOfferResource extends Resource
     {
         return (new static())->canAccessResource(['provider', 'transporter']);
     }
-    
+
     /**
      * Restreint les requêtes au marchand connecté (via ses profils)
      */
@@ -218,17 +218,17 @@ class ServiceOfferResource extends Resource
                                                 ->label('Point de départ / Adresse')
                                                 ->placeholder('Ex: Libreville, Quartier Montagne'),
 
-                                            TextInput::make('latitude')
-                                                ->label('Latitude')
-                                                ->numeric()
-                                                ->step(0.000001)
-                                                ->placeholder('Ex: 0.416198'),
+                                            // TextInput::make('latitude')
+                                            //     ->label('Latitude')
+                                            //     ->numeric()
+                                            //     ->step(0.000001)
+                                            //     ->placeholder('Ex: 0.416198'),
 
-                                            TextInput::make('longitude')
-                                                ->label('Longitude')
-                                                ->numeric()
-                                                ->step(0.000001)
-                                                ->placeholder('Ex: 9.467268'),
+                                            // TextInput::make('longitude')
+                                            //     ->label('Longitude')
+                                            //     ->numeric()
+                                            //     ->step(0.000001)
+                                            //     ->placeholder('Ex: 9.467268'),
                                         ]),
                                 ]),
                         ]),
