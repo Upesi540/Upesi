@@ -115,7 +115,7 @@ class FedaPayGateway implements PaymentGatewayInterface
                             'lastname' => $request->user->last_name ?? '',
                             'email' => $request->user->email,
                             'phone_number' => [
-                                'number' => $request->metadata['phone'] ?? $request->user->phone,
+                                'number' => $request->metadata['phone'],
                                 'country' => $request->metadata['country'] ?? 'TG'
                             ]
                         ]
@@ -314,26 +314,44 @@ class FedaPayGateway implements PaymentGatewayInterface
 
     public function handleWebhook(WebhookRequest $request): WebhookResponse
     {
-        // 🔥 AJOUTE LA VÉRIFICATION DE SIGNATURE ICI
-        $payload = json_encode($request->payload);
-        $signature = $request->headers['x-fedapay-signature'][0] ?? '';
-        $secret = env('FEDAPAY_WEBHOOK_SECRET');
+        // 1. Récupération du JSON brut intact
+        $payload = $request->rawContent;
+
+        // 2. Extraction de la string propre depuis le tableau de headers de Symfony
+        // Symfony store les headers sous forme de tableaux : ['valeur1', 'valeur2']
+        $sigHeader = $request->headers['x-fedapay-signature'][0]
+            ?? $request->headers['x-fedapay-signature']
+            ?? '';
+
+        // 3. Récupération du secret whsec_
+        $secret = config('payment.gateways.fedapay.webhook_secret', env('FEDAPAY_WEBHOOK_SECRET'));
+
+        Log::info('[FedaPay] Webhook reçu', [
+            'payload' => $request->payload,
+            'sig_header' => $sigHeader,
+            'secret_prefix' => substr($secret, 0, 6) . '...'
+        ]);
 
         try {
-            \FedaPay\Webhook::constructEvent($payload, $signature, $secret);
+            // Le SDK reçoit bien sa string propre, son JSON brut et son secret
+            \FedaPay\Webhook::constructEvent($payload, $sigHeader, $secret);
         } catch (\Exception $e) {
             Log::warning('[FedaPay] Signature invalide', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'received_signature' => $sigHeader,
+                'secret_prefix' => substr($secret, 0, 6) . '...'
             ]);
             return new WebhookResponse(false, 'invalid_signature', 'Signature verification failed');
         }
 
-        Log::info('[FedaPay] Webhook reçu', ['payload' => $request->payload]);
+        Log::info('[FedaPay] Webhook reçu et signature validée !', ['payload' => $request->payload]);
 
         try {
             return DB::transaction(function () use ($request) {
                 $data = $request->payload;
-                $id = $data['id'] ?? ($data['data']['id'] ?? null);
+
+                // 💥 CORRECTION : Recherche de l'ID d'abord dans l'objet 'entity' de FedaPay
+                $id = $data['entity']['id'] ?? $data['id'] ?? ($data['data']['id'] ?? null);
 
                 if (!$id) {
                     Log::warning('[FedaPay] Webhook sans ID', ['payload' => $data]);
@@ -347,8 +365,8 @@ class FedaPayGateway implements PaymentGatewayInterface
                     return new WebhookResponse(false, 'not_found');
                 }
 
-                // Éviter les doublons
-                if (in_array($transaction->status, ['approved', 'completed', 'failed'])) {
+                // 🔥 Ajout de 'cancelled' pour éviter les doublons
+                if (in_array($transaction->status, ['approved', 'completed', 'failed', 'cancelled'])) {
                     Log::info('[FedaPay] Webhook déjà traité', [
                         'tid' => $id,
                         'status' => $transaction->status
@@ -356,29 +374,31 @@ class FedaPayGateway implements PaymentGatewayInterface
                     return new WebhookResponse(true, 'already_processed');
                 }
 
-                $status = $data['status'] ?? $data['data']['status'] ?? 'unknown';
+                // 💥 CORRECTION : Recherche du statut d'abord dans l'objet 'entity' de FedaPay
+                $status = $data['entity']['status'] ?? $data['status'] ?? ($data['data']['status'] ?? 'unknown');
+
                 Log::info('[FedaPay] Traitement webhook', [
                     'tid' => $id,
                     'operation' => $transaction->operation,
-                    'fedapay_status' => $status
+                    'fedapay_status' => $status,
+                    'current_status' => $transaction->status
                 ]);
 
-                // CAS 1: Dépôt réussi
+                // ================================================
+                // CAS 1: DÉPÔT RÉUSSI
+                // ================================================
                 if ($transaction->operation === 'deposit' && in_array($status, ['approved', 'transferred'])) {
                     try {
-                        // 1. Calculer le net après commission
                         $netAmount = $transaction->amount - $transaction->fees;
 
-                        // 2. Créditer le wallet de l'utilisateur (net)
                         $walletTransaction = $this->walletService->deposit(
                             $transaction->wallet,
-                            $netAmount,                                    // ← montant NET
-                            $transaction->fees,                            // ← frais
+                            $netAmount,
+                            $transaction->fees,
                             $transaction->reference,
                             $transaction
                         );
 
-                        // 3. 🔥 Créditer le wallet système (la commission)
                         if ($transaction->fees > 0) {
                             $commissionWallet = \App\Models\Wallet::getSystemCommission($transaction->currency_id);
                             if ($commissionWallet) {
@@ -414,7 +434,30 @@ class FedaPayGateway implements PaymentGatewayInterface
                         throw $e;
                     }
                 }
-                // CAS 2: Retrait réussi
+
+                // ================================================
+                // CAS 2: DÉPÔT ANNULÉ ou REFUSÉ
+                // ================================================
+                elseif ($transaction->operation === 'deposit' && in_array($status, ['canceled', 'cancelled', 'declined', 'failed', 'expired'])) {
+                    // ✅ Pour un dépôt annulé, rien à rembourser car l'argent n'a pas été débité
+                    $transaction->update([
+                        'status' => 'cancelled',
+                        'provider_response' => $data,
+                        'error_message' => "Dépôt {$status} par FedaPay",
+                        'processed_at' => now()
+                    ]);
+
+                    Log::warning('[FedaPay] Dépôt annulé/refusé', [
+                        'tid' => $id,
+                        'status' => $status,
+                        'user_id' => $transaction->user_id,
+                        'amount' => $transaction->amount
+                    ]);
+                }
+
+                // ================================================
+                // CAS 3: RETRAIT RÉUSSI
+                // ================================================
                 elseif ($transaction->operation === 'withdrawal' && in_array($status, ['sent', 'paid'])) {
                     $transaction->update([
                         'status' => 'completed',
@@ -423,19 +466,43 @@ class FedaPayGateway implements PaymentGatewayInterface
                     ]);
                     Log::info('[FedaPay] Retrait complété', ['tid' => $id]);
                 }
-                // CAS 3: Échec
-                elseif (in_array($status, ['declined', 'canceled', 'failed'])) {
+
+                // ================================================
+                // CAS 4: RETRAIT ANNULÉ ou REFUSÉ
+                // ================================================
+                elseif ($transaction->operation === 'withdrawal' && in_array($status, ['canceled', 'cancelled', 'declined', 'failed', 'expired'])) {
+                    // ✅ Pour un retrait annulé, on rembourse le wallet
+                    if ($transaction->status === 'processing' || $transaction->status === 'pending') {
+                        $wallet = $transaction->wallet;
+                        if ($wallet) {
+                            $wallet->modifyBalance(
+                                amount: $transaction->amount + $transaction->fees,
+                                type: 'credit',
+                                opType: 'refund',
+                                desc: "Remboursement retrait annulé #{$transaction->reference}",
+                                source: $transaction
+                            );
+                        }
+                    }
+
                     $transaction->update([
-                        'status' => 'failed',
+                        'status' => 'cancelled',
                         'provider_response' => $data,
-                        'error_message' => "Transaction {$status} par FedaPay"
+                        'error_message' => "Retrait {$status} par FedaPay",
+                        'processed_at' => now()
                     ]);
-                    Log::warning('[FedaPay] Transaction échouée', [
+
+                    Log::warning('[FedaPay] Retrait annulé/refusé', [
                         'tid' => $id,
-                        'status' => $status
+                        'status' => $status,
+                        'user_id' => $transaction->user_id,
+                        'amount' => $transaction->amount
                     ]);
                 }
-                // CAS 4: Autres statuts
+
+                // ================================================
+                // CAS 5: AUTRES STATUTS
+                // ================================================
                 else {
                     $transaction->update([
                         'status' => $status,

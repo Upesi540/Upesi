@@ -177,7 +177,8 @@ class PaymentController extends Controller
 
             $webhookRequest = new WebhookRequest(
                 payload: $request->all(),
-                headers: $request->headers->all()
+                headers: $request->headers->all(),
+                rawContent: $request->getContent() // ⬅️ On capture le flux brut ici !
             );
 
             $response = $gatewayInstance->handleWebhook($webhookRequest);
