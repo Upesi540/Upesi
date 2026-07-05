@@ -28,7 +28,7 @@ class AuthenticatedSessionController extends Controller
         $request->authenticate();
 
         /** @var User $user */
-        $user = Auth::user();
+        $user = Auth::user()->load('wallet'); // Charge la relation wallet
 
         // 3. On génère le token Sanctum (L'annotation @var User règle le soulignement)
         $token = $user->createToken('auth_token')->plainTextToken;
