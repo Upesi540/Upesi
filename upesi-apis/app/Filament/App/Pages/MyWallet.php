@@ -32,10 +32,19 @@ class MyWallet extends Page implements HasTable
     /**
      * 🔥 Pays supportés par FedaPay
      */
+
+    protected function getHeaderWidgets(): array
+    {
+        return [
+            \App\Filament\Widgets\UserWalletOverview::class,
+        ];
+    }
+
     protected function getFedapayCountries(): array
     {
         return ['tg', 'bj', 'ci', 'sn', 'cm', 'ml', 'ne', 'bf', 'gn', 'gh', 'ng'];
     }
+
 
     /**
      * 🔥 Formulaire de recharge réutilisable
@@ -135,7 +144,6 @@ class MyWallet extends Page implements HasTable
 
     /**
      * ⭐ Table UNIQUEMENT avec WalletTransaction
-     * Toutes les opérations sont déjà dans cette table !
      */
     public function table(Table $table): Table
     {
@@ -149,11 +157,8 @@ class MyWallet extends Page implements HasTable
             )
             ->heading('Historique des activités')
             ->description('Suivez vos dépôts, achats et mouvements de fonds.')
-
-            // ⭐⭐⭐ RECHERCHE ACTIVÉE ⭐⭐⭐
             ->searchable()
             ->searchPlaceholder('Rechercher une transaction...')
-
             ->columns([
                 TextColumn::make('created_at')
                     ->label('Date')
@@ -318,10 +323,17 @@ class MyWallet extends Page implements HasTable
         $countryCode = 'TG';
 
         $countryPrefixes = [
-            '228' => 'TG', '229' => 'BJ', '225' => 'CI',
-            '221' => 'SN', '237' => 'CM', '223' => 'ML',
-            '227' => 'NE', '226' => 'BF', '224' => 'GN',
-            '233' => 'GH', '234' => 'NG',
+            '228' => 'TG',
+            '229' => 'BJ',
+            '225' => 'CI',
+            '221' => 'SN',
+            '237' => 'CM',
+            '223' => 'ML',
+            '227' => 'NE',
+            '226' => 'BF',
+            '224' => 'GN',
+            '233' => 'GH',
+            '234' => 'NG',
         ];
 
         $phone = ltrim($phone, '+');
