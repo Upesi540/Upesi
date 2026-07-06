@@ -2,7 +2,7 @@
 
 namespace App\Filament\App\Pages;
 
-use App\Models\Transaction;
+use App\Models\WalletTransaction;
 use App\Services\Payment\DTOs\DepositRequest;
 use App\Services\Payment\Services\PaymentGatewayManager;
 use BackedEnum;
@@ -59,7 +59,6 @@ class MyWallet extends Page implements HasTable
                 ->maxValue(1000000)
                 ->prefix('XOF'),
 
-            // ✅ PhoneInput avec les BONNES méthodes (selon la doc)
             PhoneInput::make('phone')
                 ->label('Numéro de téléphone')
                 ->required()
@@ -68,7 +67,7 @@ class MyWallet extends Page implements HasTable
                 ->initialCountry('tg')
                 ->onlyCountries($this->getFedapayCountries())
                 ->separateDialCode(true)
-                ->formatOnDisplay(true), // ✅ La BONNE méthode
+                ->formatOnDisplay(true),
         ];
     }
 
@@ -90,7 +89,6 @@ class MyWallet extends Page implements HasTable
                         throw new \Exception("Vous ne possédez pas encore de portefeuille actif.");
                     }
 
-                    // ✅ Extraire le numéro et le pays
                     $phoneData = $this->extractPhoneData($data['phone']);
 
                     $gateway = $gatewayManager->getGateway($data['gateway']);
@@ -135,40 +133,109 @@ class MyWallet extends Page implements HasTable
         ];
     }
 
+    /**
+     * ⭐ Table UNIQUEMENT avec WalletTransaction
+     * Toutes les opérations sont déjà dans cette table !
+     */
     public function table(Table $table): Table
     {
         return $table
-            ->query(Transaction::query()->where('user_id', Auth::user()->id)->orderBy('created_at', 'desc'))
+            ->query(
+                WalletTransaction::query()
+                    ->whereHas('wallet', function ($q) {
+                        $q->where('user_id', Auth::user()->id);
+                    })
+                    ->orderBy('created_at', 'desc')
+            )
             ->heading('Historique des activités')
-            ->description('Suivez vos dépôts et vos dépenses sur la bourse.')
+            ->description('Suivez vos dépôts, achats et mouvements de fonds.')
+
+            // ⭐⭐⭐ RECHERCHE ACTIVÉE ⭐⭐⭐
+            ->searchable()
+            ->searchPlaceholder('Rechercher une transaction...')
+
             ->columns([
                 TextColumn::make('created_at')
                     ->label('Date')
                     ->dateTime('d/m/Y H:i')
                     ->sortable()
-                    ->color('gray'),
+                    ->color('gray')
+                    ->searchable(),
 
-                TextColumn::make('type')
-                    ->label('Type')
+                TextColumn::make('operation_type')
+                    ->label('Opération')
                     ->badge()
                     ->formatStateUsing(fn(string $state): string => match ($state) {
-                        'deposit' => 'Dépôt',
-                        'withdrawal' => 'Retrait',
-                        'payment' => 'Achat',
+                        'deposit' => '💰 Dépôt',
+                        'withdrawal' => '🏦 Retrait',
+                        'purchase' => '🛒 Achat',
+                        'sale' => '📦 Vente',
+                        'escrow_hold' => '🔒 Gelé',
+                        'escrow_refund' => '↩️ Remboursement',
+                        'release' => '🔓 Libéré',
+                        'commission' => '💸 Commission',
+                        'transfer_in' => '📥 Transfert reçu',
+                        'transfer_out' => '📤 Transfert envoyé',
                         default => $state,
                     })
                     ->color(fn(string $state): string => match ($state) {
                         'deposit' => 'success',
                         'withdrawal' => 'danger',
-                        'payment' => 'info',
+                        'purchase' => 'info',
+                        'sale' => 'success',
+                        'escrow_hold' => 'warning',
+                        'escrow_refund' => 'gray',
+                        'release' => 'success',
+                        'commission' => 'warning',
+                        'transfer_in' => 'success',
+                        'transfer_out' => 'danger',
                         default => 'gray',
-                    }),
+                    })
+                    ->searchable(),
+
+                TextColumn::make('type')
+                    ->label('Type')
+                    ->badge()
+                    ->formatStateUsing(fn(string $state): string => match ($state) {
+                        'credit' => '➕ Crédit',
+                        'debit' => '➖ Débit',
+                        'freeze' => '🔒 Gel',
+                        'unfreeze' => '🔓 Dégel',
+                        default => $state,
+                    })
+                    ->color(fn(string $state): string => match ($state) {
+                        'credit' => 'success',
+                        'debit' => 'danger',
+                        'freeze' => 'warning',
+                        'unfreeze' => 'info',
+                        default => 'gray',
+                    })
+                    ->searchable(),
 
                 TextColumn::make('amount')
                     ->label('Montant')
                     ->money(config('app.base_currency'))
                     ->weight('bold')
-                    ->color(fn($record) => $record->type === 'deposit' ? 'success' : 'gray'),
+                    ->color(function ($record) {
+                        if ($record->type === 'credit' || $record->operation_type === 'deposit') {
+                            return 'success';
+                        }
+                        if ($record->type === 'freeze') {
+                            return 'warning';
+                        }
+                        return 'gray';
+                    })
+                    ->searchable(),
+
+                TextColumn::make('balance_before')
+                    ->label('Solde avant')
+                    ->money(config('app.base_currency'))
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                TextColumn::make('balance_after')
+                    ->label('Solde après')
+                    ->money(config('app.base_currency'))
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('status')
                     ->label('Statut')
@@ -177,16 +244,54 @@ class MyWallet extends Page implements HasTable
                         'completed' => 'success',
                         'pending' => 'warning',
                         'failed' => 'danger',
+                        'cancelled' => 'gray',
                         default => 'gray',
-                    }),
+                    })
+                    ->searchable(),
+
+                TextColumn::make('description')
+                    ->label('Description')
+                    ->limit(40)
+                    ->toggleable()
+                    ->searchable(),
+
+                TextColumn::make('reference')
+                    ->label('Référence')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->searchable(),
             ])
             ->filters([
-                SelectFilter::make('type')
-                    ->label('Type de transaction')
+                SelectFilter::make('operation_type')
+                    ->label('Type d\'opération')
                     ->options([
-                        'deposit' => 'Dépôts',
-                        'payment' => 'Achats',
-                        'withdrawal' => 'Retraits',
+                        'deposit' => '💰 Dépôts',
+                        'withdrawal' => '🏦 Retraits',
+                        'purchase' => '🛒 Achats',
+                        'sale' => '📦 Ventes',
+                        'escrow_hold' => '🔒 Gels',
+                        'escrow_refund' => '↩️ Remboursements',
+                        'release' => '🔓 Libérations',
+                        'commission' => '💸 Commissions',
+                        'transfer_in' => '📥 Transferts reçus',
+                        'transfer_out' => '📤 Transferts envoyés',
+                    ]),
+
+                SelectFilter::make('type')
+                    ->label('Type de mouvement')
+                    ->options([
+                        'credit' => '➕ Crédit',
+                        'debit' => '➖ Débit',
+                        'freeze' => '🔒 Gel',
+                        'unfreeze' => '🔓 Dégel',
+                    ]),
+
+                SelectFilter::make('status')
+                    ->label('Statut')
+                    ->options([
+                        'completed' => '✅ Complété',
+                        'pending' => '⏳ En attente',
+                        'failed' => '❌ Échoué',
+                        'cancelled' => '❌ Annulé',
                     ]),
             ])
             ->emptyStateHeading('Aucune transaction pour le moment')

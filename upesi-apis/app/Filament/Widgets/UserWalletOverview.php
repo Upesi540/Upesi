@@ -72,7 +72,7 @@ class UserWalletOverview extends BaseWidget
                     ->color('warning')
                     ->extraAttributes([
                         'class' => 'cursor-pointer',
-                        'onclick' => "window.location.href='/app/my-wallet/transactions?type=freeze'",
+                    'onclick' => "window.location.href='/app/my-wallet'",
                     ]);
                 }
 
@@ -88,7 +88,7 @@ class UserWalletOverview extends BaseWidget
                     ->color('info')
                     ->extraAttributes([
                         'class' => 'cursor-pointer',
-                        'onclick' => "window.location.href='/app/orders/pending'",
+                        // 'onclick' => "window.location.href='/app/orders/pending'",
                     ]);
                 }
 
@@ -104,7 +104,7 @@ class UserWalletOverview extends BaseWidget
                     ->color('gray')
                     ->extraAttributes([
                         'class' => 'cursor-pointer',
-                        'onclick' => "window.location.href='/app/orders/pending'",
+                        // 'onclick' => "window.location.href='/app/orders/pending'",
                     ]);
                 }
             }
