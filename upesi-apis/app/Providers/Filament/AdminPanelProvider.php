@@ -29,7 +29,7 @@ class AdminPanelProvider extends PanelProvider
         return $panel
             ->default()
             ->id('admin')
-            ->path('admin')
+            ->path('admin') // Active le menu horizontal
             ->sidebarCollapsibleOnDesktop() // Ajoute cette ligne
             ->userMenuItems([
                 Action::make('wallet')
